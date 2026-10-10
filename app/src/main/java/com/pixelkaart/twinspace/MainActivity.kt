@@ -1,9 +1,11 @@
 package com.pixelkaart.twinspace
 
 import android.content.ComponentName
+import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -41,6 +43,16 @@ class MainActivity : AppCompatActivity() {
         binding.recycler.adapter = adapter
 
         binding.setupButton.setOnClickListener { WorkProfileManager.provision(this) }
+        binding.foreignSettingsButton.setOnClickListener { openSystemSettings() }
+
+        binding.toolbar.inflateMenu(R.menu.main_menu)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_refresh -> { refresh(); true }
+                R.id.action_remove -> { openSystemSettings(); true }
+                else -> false
+            }
+        }
 
         binding.toggle.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
@@ -52,7 +64,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (WorkProfileManager.isReady(this) && !bound) {
+        if (WorkProfileManager.isOurProfile(this) && !bound) {
             WorkProfileManager.bind(this, conn)
         }
     }
@@ -60,11 +72,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         if (bound) {
-            try {
-                unbindService(conn)
-            } catch (e: Exception) {
-                // ignore
-            }
+            try { unbindService(conn) } catch (e: Exception) { /* ignore */ }
             bound = false
             service = null
         }
@@ -76,45 +84,57 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateState() {
-        val ready = WorkProfileManager.isReady(this)
-        binding.setupContainer.visibility = if (ready) View.GONE else View.VISIBLE
-        binding.mainContainer.visibility = if (ready) View.VISIBLE else View.GONE
-        if (ready) refresh()
+        val user = WorkProfileManager.managedProfile(this)
+        val ours = user != null && WorkProfileManager.isOurProfile(this)
+        binding.setupContainer.visibility = if (user == null) View.VISIBLE else View.GONE
+        binding.foreignContainer.visibility = if (user != null && !ours) View.VISIBLE else View.GONE
+        binding.mainContainer.visibility = if (ours) View.VISIBLE else View.GONE
+        if (ours) {
+            if (!bound) WorkProfileManager.bind(this, conn)
+            refresh()
+        }
     }
 
     private fun refresh() {
-        val items = if (clonedMode) {
-            WorkProfileManager.clonedApps(this)
+        if (binding.mainContainer.visibility != View.VISIBLE) return
+        if (clonedMode) {
+            val svc = service
+            val pkgs = if (svc != null) try { svc.listPackages() } catch (e: Exception) { null } else null
+            val frozen: ((String) -> Boolean)? =
+                if (svc != null) ({ p -> try { svc.isFrozen(p) } catch (e: Exception) { false } }) else null
+            adapter.submit(WorkProfileManager.clonedApps(this, pkgs, frozen))
         } else {
-            WorkProfileManager.personalApps(this)
+            adapter.submit(WorkProfileManager.personalApps(this))
         }
-        adapter.submit(items)
-        binding.emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        val empty = adapter.itemCount == 0
+        binding.emptyView.visibility = if (empty) View.VISIBLE else View.GONE
         binding.emptyView.setText(if (clonedMode) R.string.empty_cloned else R.string.empty_personal)
     }
 
     private fun onAction(info: AppInfo, action: String) {
+        val svc = service
         when (action) {
             "open" -> WorkProfileManager.launch(this, info)
             "clone" -> {
-                val svc = service
-                val ok = svc != null && try {
-                    svc.cloneApp(info.packageName)
-                } catch (e: Exception) {
-                    false
-                }
-                Toast.makeText(this, if (ok) R.string.cloned_toast else R.string.action_failed, Toast.LENGTH_SHORT).show()
+                val status = if (svc != null) try { svc.cloneApp(info.packageName) } catch (e: Exception) { "error: ${e.message}" } else "service not connected"
+                toast(if (status == "ok") getString(R.string.cloned_toast) else status)
             }
             "uninstall" -> {
-                val svc = service
-                val ok = svc != null && try {
-                    svc.uninstallApp(info.packageName)
-                } catch (e: Exception) {
-                    false
-                }
-                if (!ok) Toast.makeText(this, R.string.action_failed, Toast.LENGTH_SHORT).show()
+                val status = if (svc != null) try { svc.uninstallApp(info.packageName) } catch (e: Exception) { "error: ${e.message}" } else "service not connected"
+                if (status != "ok") toast(status)
             }
+            "freeze" -> try { svc?.setFrozen(info.packageName, true) } catch (e: Exception) { /* ignore */ }
+            "unfreeze" -> try { svc?.setFrozen(info.packageName, false) } catch (e: Exception) { /* ignore */ }
         }
         refresh()
+    }
+
+    private fun openSystemSettings() {
+        toast(getString(R.string.remove_hint))
+        try { startActivity(Intent(Settings.ACTION_SETTINGS)) } catch (e: Exception) { /* ignore */ }
+    }
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
     }
 }

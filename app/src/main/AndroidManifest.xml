@@ -10,6 +10,10 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <permission
+        android:name="com.pixelkaart.twinspace.permission.BIND_CLONE_SERVICE"
+        android:protectionLevel="signature" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -47,9 +51,10 @@
                 <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
+
         <service
             android:name=".CloneService"
-            android:exported="false" />
-
+            android:exported="true"
+            android:permission="com.pixelkaart.twinspace.permission.BIND_CLONE_SERVICE" />
     </application>
 </manifest>
