@@ -33,26 +33,21 @@ class AppListAdapter(
         holder.icon.setImageDrawable(item.icon)
         holder.name.text = item.label
         holder.pkg.text = item.packageName
-        holder.itemView.alpha = if (item.frozen) 0.45f else 1f
 
-        holder.itemView.setOnClickListener {
-            if (clonedMode && !item.frozen) onAction(item, "open")
-        }
+        holder.itemView.setOnClickListener { if (clonedMode) onAction(item, "open") }
         holder.more.setOnClickListener { anchor ->
             val popup = PopupMenu(anchor.context, anchor)
             if (clonedMode) {
-                popup.menu.add(0, 1, 0, if (item.frozen) "Unfreeze" else "Freeze")
-                popup.menu.add(0, 2, 1, "Open")
-                popup.menu.add(0, 3, 2, "Uninstall")
+                popup.menu.add(0, 1, 0, "Open")
+                popup.menu.add(0, 2, 1, "Uninstall")
             } else {
-                popup.menu.add(0, 4, 0, "Clone to work space")
+                popup.menu.add(0, 3, 0, "Clone to work space")
             }
             popup.setOnMenuItemClickListener { mi ->
                 when (mi.itemId) {
-                    1 -> onAction(item, if (item.frozen) "unfreeze" else "freeze")
-                    2 -> onAction(item, "open")
-                    3 -> onAction(item, "uninstall")
-                    4 -> onAction(item, "clone")
+                    1 -> onAction(item, "open")
+                    2 -> onAction(item, "uninstall")
+                    3 -> onAction(item, "clone")
                 }
                 true
             }

@@ -1,6 +1,9 @@
 package com.pixelkaart.twinspace
 
+import android.content.ComponentName
+import android.content.ServiceConnection
 import android.os.Bundle
+import android.os.IBinder
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -12,6 +15,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: AppListAdapter
     private var clonedMode = false
+    private var service: ICloneService? = null
+    private var bound = false
+
+    private val conn = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            service = ICloneService.Stub.asInterface(binder)
+            bound = true
+            refresh()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            service = null
+            bound = false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +47,26 @@ class MainActivity : AppCompatActivity() {
             clonedMode = checkedId == R.id.btn_cloned
             adapter.clonedMode = clonedMode
             refresh()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (WorkProfileManager.isReady(this) && !bound) {
+            WorkProfileManager.bind(this, conn)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (bound) {
+            try {
+                unbindService(conn)
+            } catch (e: Exception) {
+                // ignore
+            }
+            bound = false
+            service = null
         }
     }
 
@@ -56,21 +94,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onAction(info: AppInfo, action: String) {
-        val ok = when (action) {
-            "clone" -> WorkProfileManager.cloneApp(this, info.packageName)
-            "uninstall" -> WorkProfileManager.uninstall(this, info.packageName)
-            "freeze" -> WorkProfileManager.setFrozen(this, info.packageName, true)
-            "unfreeze" -> WorkProfileManager.setFrozen(this, info.packageName, false)
+        when (action) {
             "open" -> WorkProfileManager.launch(this, info)
-            else -> true
+            "clone" -> {
+                val svc = service
+                val ok = svc != null && try {
+                    svc.cloneApp(info.packageName)
+                } catch (e: Exception) {
+                    false
+                }
+                Toast.makeText(this, if (ok) R.string.cloned_toast else R.string.action_failed, Toast.LENGTH_SHORT).show()
+            }
+            "uninstall" -> {
+                val svc = service
+                val ok = svc != null && try {
+                    svc.uninstallApp(info.packageName)
+                } catch (e: Exception) {
+                    false
+                }
+                if (!ok) Toast.makeText(this, R.string.action_failed, Toast.LENGTH_SHORT).show()
+            }
         }
-        val msg = when {
-            action == "clone" && ok -> R.string.cloned_toast
-            action == "clone" -> R.string.action_failed
-            !ok -> R.string.action_failed
-            else -> 0
-        }
-        if (msg != 0) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         refresh()
     }
 }

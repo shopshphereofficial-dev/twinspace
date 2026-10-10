@@ -1,33 +1,33 @@
 package com.pixelkaart.twinspace
 
 import android.app.Activity
-import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
-import android.content.pm.PackageInstaller
-import android.os.Build
+import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
 
 /**
- * All the cross-profile plumbing lives here. TwinSpace is the profile owner of an
- * isolated work profile; this object clones/uninstalls/freezes apps inside it.
+ * Cross-profile plumbing. TwinSpace is the profile owner of an isolated work profile.
+ * Listing is done from the main profile (PackageManager / LauncherApps); actions that
+ * must run as the profile owner are delegated to [CloneService] inside the work profile.
  */
 object WorkProfileManager {
 
     const val PROVISION_REQUEST = 4001
-    const val ACTION_UNINSTALL_DONE = "com.pixelkaart.twinspace.UNINSTALL_DONE"
 
     fun adminComponent(context: Context): ComponentName =
         ComponentName(context.applicationContext, AdminReceiver::class.java)
 
     fun workProfileUser(context: Context): UserHandle? {
         val um = context.getSystemService(UserManager::class.java) ?: return null
-        return um.userProfiles.firstOrNull { um.isManagedProfile(it) }
+        val self = Process.myUserHandle()
+        return um.userProfiles.firstOrNull { it != self }
     }
 
     fun isReady(context: Context): Boolean = workProfileUser(context) != null
@@ -48,15 +48,25 @@ object WorkProfileManager {
         }
     }
 
-    private fun workContext(context: Context): Context? {
-        val user = workProfileUser(context) ?: return null
-        return context.createContextAsUser(user, 0)
+    /** Bind to the work-profile instance of [CloneService]. */
+    fun bind(context: Context, conn: ServiceConnection): Boolean {
+        val user = workProfileUser(context) ?: return false
+        val intent = Intent(context.applicationContext, CloneService::class.java)
+        val dpm = context.getSystemService(DevicePolicyManager::class.java)
+        return try {
+            dpm.bindDeviceAdminServiceAsUser(
+                adminComponent(context), intent, conn, Context.BIND_AUTO_CREATE, user
+            )
+        } catch (e: Exception) {
+            try {
+                context.bindServiceAsUser(intent, conn, Context.BIND_AUTO_CREATE, user)
+            } catch (e2: Exception) {
+                false
+            }
+        }
     }
 
-    private fun workDpm(context: Context): DevicePolicyManager? =
-        workContext(context)?.getSystemService(DevicePolicyManager::class.java)
-
-    private fun launchable(context: Context): List<AppInfo> {
+    private fun personalLaunchable(context: Context): List<AppInfo> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val resolved = pm.queryIntentActivities(intent, 0)
@@ -86,62 +96,35 @@ object WorkProfileManager {
     }
 
     /** Apps installed in the main (personal) profile. */
-    fun personalApps(context: Context): List<AppInfo> = launchable(context)
+    fun personalApps(context: Context): List<AppInfo> = personalLaunchable(context)
 
-    /** Apps currently installed inside the work profile. */
+    /** Apps currently living inside the work profile (queried via LauncherApps). */
     fun clonedApps(context: Context): List<AppInfo> {
-        val workCtx = workContext(context) ?: return emptyList()
-        val dpm = workDpm(context)
-        val admin = adminComponent(context)
-        return launchable(workCtx).map { info ->
-            val hidden = try {
-                dpm?.isApplicationHidden(admin, info.packageName) ?: false
-            } catch (e: Exception) {
-                false
-            }
-            info.copy(frozen = hidden)
-        }
-    }
-
-    /** Install an existing personal app into the work profile (the actual "clone"). */
-    fun cloneApp(context: Context, packageName: String): Boolean {
-        val dpm = workDpm(context) ?: return false
-        return try {
-            dpm.installExistingPackage(adminComponent(context), packageName)
-            true
+        val user = workProfileUser(context) ?: return emptyList()
+        val la = context.getSystemService(LauncherApps::class.java) ?: return emptyList()
+        val infos = try {
+            la.getActivityList(null, user)
         } catch (e: Exception) {
-            false
+            return emptyList()
         }
-    }
-
-    /** Remove an app from the work profile only. */
-    fun uninstall(context: Context, packageName: String): Boolean {
-        val workCtx = workContext(context) ?: return false
-        return try {
-            val installer = workCtx.getSystemService(PackageInstaller::class.java)
-            val intent = Intent(ACTION_UNINSTALL_DONE).setPackage(context.packageName)
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-            val pi = PendingIntent.getBroadcast(context, packageName.hashCode(), intent, flags)
-            installer.uninstall(packageName, pi.intentSender)
-            true
-        } catch (e: Exception) {
-            false
+        val seen = HashSet<String>()
+        val out = ArrayList<AppInfo>()
+        for (li in infos) {
+            val pkg = li.componentName.packageName
+            if (pkg == context.packageName) continue
+            if (!seen.add(pkg)) continue
+            out.add(
+                AppInfo(
+                    label = li.label?.toString() ?: pkg,
+                    packageName = pkg,
+                    icon = li.getIcon(0),
+                    system = false,
+                    component = li.componentName
+                )
+            )
         }
-    }
-
-    /** Freeze (hide) or unfreeze an app inside the work profile. */
-    fun setFrozen(context: Context, packageName: String, frozen: Boolean): Boolean {
-        val dpm = workDpm(context) ?: return false
-        return try {
-            dpm.setApplicationHidden(adminComponent(context), packageName, frozen)
-            true
-        } catch (e: Exception) {
-            false
-        }
+        out.sortBy { it.label.lowercase() }
+        return out
     }
 
     /** Launch an app that lives in the work profile. */
