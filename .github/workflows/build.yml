@@ -47,10 +47,9 @@ jobs:
           name: twinspace-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
-      - name: Publish APK as a release
+      - name: Publish standard app.apk release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${ secrets.GITHUB_TOKEN }
         run: |
           APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
           cp "$APK" app.apk
