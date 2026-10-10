@@ -47,10 +47,14 @@ jobs:
           name: twinspace-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Prepare app.apk
+        run: cp $(find app/build/outputs/apk -name '*.apk' | head -1) app.apk
       - name: Publish standard app.apk release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest APK
+          make_latest: true
+          files: app.apk
         env:
-          GH_TOKEN: ${ secrets.GITHUB_TOKEN }
-        run: |
-          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
-          cp "$APK" app.apk
-          gh release create latest app.apk --title "Latest APK" --notes "Auto-built APK from source. Direct download." --latest 2>/dev/null || gh release upload latest app.apk --clobber
+          GITHUB_TOKEN: ${ secrets.GITHUB_TOKEN }
