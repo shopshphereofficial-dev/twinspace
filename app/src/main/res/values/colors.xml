@@ -1,0 +1,7 @@
+<resources>
+    <color name="brand">#4F46E5</color>
+    <color name="brand_dark">#312E81</color>
+    <color name="brand_container">#E0E7FF</color>
+    <color name="brand_on_container">#1E1B4B</color>
+    <color name="surface_muted">#6B7280</color>
+</resources>

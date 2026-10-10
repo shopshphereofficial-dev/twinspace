@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">TwinSpace</string>
+    <string name="tab_personal">Personal</string>
+    <string name="tab_cloned">Cloned</string>
+    <string name="setup_title">Welcome to TwinSpace</string>
+    <string name="setup_body">TwinSpace creates a secure, isolated workspace so you can run a second copy of any app — separate account, separate data. No root needed.</string>
+    <string name="setup_button">Create work space</string>
+    <string name="clone">Clone to work space</string>
+    <string name="open">Open</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="freeze">Freeze</string>
+    <string name="unfreeze">Unfreeze</string>
+    <string name="empty_personal">No apps found</string>
+    <string name="empty_cloned">Nothing cloned yet. Open the Personal tab and clone an app.</string>
+    <string name="cloned_toast">Cloned. Check the Cloned tab.</string>
+    <string name="action_failed">Action failed. Try again.</string>
+    <string name="refresh">Refresh</string>
+    <string name="more">More options</string>
+</resources>
